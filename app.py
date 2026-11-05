@@ -1,5 +1,4 @@
 
-import io
 import json
 import html
 from datetime import date
@@ -14,14 +13,23 @@ from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 
 
-# ============================================================
+# ==========================================================
 # ERIMMT 2026 — MONITORAMENTO AMBIENTAL COM IA
-# ============================================================
+# ==========================================================
 
 st.set_page_config(
     page_title="ERIMMT | Monitoramento Ambiental",
     page_icon="🌎",
     layout="wide"
+)
+
+CENTER = [-15.6461, -56.1326]
+
+CLASS_LAYER = "Classificação MLP-8 V2"
+
+ASSET_CLASS = (
+    "projects/erimmt/assets/"
+    "classificacao_MLP8_V2_2026"
 )
 
 COLORS = {
@@ -45,45 +53,27 @@ FEATURES8 = FEATURES5 + [
     "NDVI", "NDWI", "NDBI"
 ]
 
-CENTER = [-15.6461, -56.1326]
-
-CLASS_LAYER = "Classificação MLP-8 V2"
-
-ASSET_CLASS = (
-    "projects/erimmt/assets/"
-    "classificacao_MLP8_V2_2026"
-)
-
-
-# ============================================================
-# RESULTADOS REAIS DA CLASSIFICAÇÃO MLP-8 V2
-# ============================================================
-
 CLASS_STATS = pd.DataFrame([
     {
         "Classe": "Área construída",
-        "Código": 0,
         "Pixels": 240860,
         "Área (ha)": 9634.40,
         "Percentual": 31.09
     },
     {
         "Classe": "Vegetação",
-        "Código": 1,
         "Pixels": 483507,
         "Área (ha)": 19340.28,
         "Percentual": 62.42
     },
     {
         "Classe": "Água",
-        "Código": 2,
         "Pixels": 12231,
         "Área (ha)": 489.24,
         "Percentual": 1.58
     },
     {
         "Classe": "Solo exposto",
-        "Código": 3,
         "Pixels": 38002,
         "Área (ha)": 1520.08,
         "Percentual": 4.91
@@ -91,13 +81,12 @@ CLASS_STATS = pd.DataFrame([
 ])
 
 
-# ============================================================
-# APARÊNCIA DO DASHBOARD
-# ============================================================
+# ==========================================================
+# ESTILO VISUAL — ALTO CONTRASTE
+# ==========================================================
 
 st.markdown("""
 <style>
-
 .block-container {
     padding-top: 1.35rem;
     max-width: 1500px;
@@ -131,14 +120,13 @@ h1, h2, h3 {
 .note * {
     color: #263648 !important;
 }
-
 </style>
 """, unsafe_allow_html=True)
 
 
-# ============================================================
+# ==========================================================
 # FUNÇÕES AUXILIARES
-# ============================================================
+# ==========================================================
 
 def records_to_csv(df):
     return df.to_csv(
@@ -148,7 +136,6 @@ def records_to_csv(df):
 
 @st.cache_data
 def base_metrics():
-
     return pd.DataFrame([
         {
             "Versão": "V2",
@@ -170,7 +157,6 @@ def base_metrics():
 
 
 def normalize_df(df):
-
     df = df.copy()
 
     aliases = {
@@ -180,28 +166,31 @@ def normalize_df(df):
         "classe": "classe_manual"
     }
 
-    for a, b in aliases.items():
-        if a in df.columns and b not in df.columns:
-            df = df.rename(columns={a: b})
+    for antigo, novo in aliases.items():
+        if antigo in df.columns and novo not in df.columns:
+            df = df.rename(columns={antigo: novo})
 
-    for c in ["latitude", "longitude"]:
-        if c in df:
-            df[c] = pd.to_numeric(
-                df[c],
+    for coluna in ["latitude", "longitude"]:
+        if coluna in df.columns:
+            df[coluna] = pd.to_numeric(
+                df[coluna],
                 errors="coerce"
             )
 
     return df
 
 
-# ============================================================
-# AUTENTICAÇÃO GOOGLE EARTH ENGINE
-# ============================================================
+# ==========================================================
+# GOOGLE EARTH ENGINE — AUTENTICAÇÃO
+# ==========================================================
 
 def ee_instance():
-
     try:
         import ee
+
+        projeto = st.secrets.get(
+            "GEE_PROJECT", "erimmt"
+        )
 
         if "GEE_SERVICE_ACCOUNT_JSON" in st.secrets:
 
@@ -230,28 +219,21 @@ def ee_instance():
 
             ee.Initialize(
                 credentials=credentials,
-                project=st.secrets.get(
-                    "GEE_PROJECT", "erimmt"
-                )
+                project=projeto
             )
 
         else:
-
-            ee.Initialize(
-                project=st.secrets.get(
-                    "GEE_PROJECT", "erimmt"
-                )
-            )
+            ee.Initialize(project=projeto)
 
         return ee, None
 
-    except Exception as e:
-        return None, str(e)
+    except Exception as exc:
+        return None, str(exc)
 
 
-# ============================================================
-# CAMADAS SATELITAIS E CLASSIFICAÇÃO MLP-8 V2
-# ============================================================
+# ==========================================================
+# CAMADAS REAIS DO EARTH ENGINE
+# ==========================================================
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def ee_tile(layer, start, end, cloud):
@@ -261,26 +243,22 @@ def ee_tile(layer, start, end, cloud):
     if ee is None:
         return None, error
 
-    # --------------------------------------------------------
-    # CLASSIFICAÇÃO REAL PRODUZIDA PELA REDE NEURAL MLP-8 V2
-    # --------------------------------------------------------
+    # CLASSIFICAÇÃO FIXA PRODUZIDA NO COLAB
 
     if layer == CLASS_LAYER:
 
         try:
-
             classification = ee.Image(
                 ASSET_CLASS
             ).select(0)
 
-            # Manter somente as quatro classes válidas
             classification = classification.updateMask(
                 classification.gte(0).And(
                     classification.lte(3)
                 )
             )
 
-            map_info = classification.getMapId({
+            mapa = classification.getMapId({
                 "min": 0,
                 "max": 3,
                 "palette": [
@@ -292,20 +270,14 @@ def ee_tile(layer, start, end, cloud):
             })
 
             return (
-                map_info["tile_fetcher"].url_format,
-                "Classificação MLP-8 V2 carregada do Earth Engine."
+                mapa["tile_fetcher"].url_format,
+                "Classificação MLP-8 V2 carregada."
             )
 
         except Exception as exc:
+            return None, str(exc)
 
-            return (
-                None,
-                f"Falha ao carregar o asset MLP-8 V2: {exc}"
-            )
-
-    # --------------------------------------------------------
-    # IMAGENS SENTINEL-2 E ÍNDICES AMBIENTAIS
-    # --------------------------------------------------------
+    # SENTINEL-2 E ÍNDICES ESPECTRAIS
 
     point = ee.Geometry.Point([
         CENTER[1],
@@ -329,7 +301,6 @@ def ee_tile(layer, start, end, cloud):
     )
 
     def prep(im):
-
         scl = im.select("SCL")
 
         valid = (
@@ -347,42 +318,39 @@ def ee_tile(layer, start, end, cloud):
 
     try:
 
-        n = images.size().getInfo()
+        quantidade = images.size().getInfo()
 
-        if n == 0:
-            return (
-                None,
-                "Nenhuma cena encontrada para esse filtro."
-            )
+        if quantidade == 0:
+            return None, "Nenhuma imagem encontrada."
 
-        im = (
+        imagem = (
             images.map(prep)
             .median()
             .clip(roi)
         )
 
-        refl = (
-            im.select([
+        reflectancia = (
+            imagem.select([
                 "B2", "B3", "B4", "B8", "B11"
             ])
             .divide(10000)
         )
 
-        ndvi = refl.normalizedDifference(
+        ndvi = reflectancia.normalizedDifference(
             ["B8", "B4"]
         ).rename("NDVI")
 
-        ndwi = refl.normalizedDifference(
+        ndwi = reflectancia.normalizedDifference(
             ["B3", "B8"]
         ).rename("NDWI")
 
-        ndbi = refl.normalizedDifference(
+        ndbi = reflectancia.normalizedDifference(
             ["B11", "B8"]
         ).rename("NDBI")
 
         if layer == "Satélite RGB":
 
-            vis = im.select([
+            vis = imagem.select([
                 "B4", "B3", "B2"
             ])
 
@@ -424,24 +392,180 @@ def ee_tile(layer, start, end, cloud):
                     ]
                 }
 
-        m = vis.getMapId(params)
+        mapa = vis.getMapId(params)
 
         return (
-            m["tile_fetcher"].url_format,
-            f"{n} cenas no intervalo selecionado"
+            mapa["tile_fetcher"].url_format,
+            f"{quantidade} cenas selecionadas."
         )
 
-    except Exception as e:
+    except Exception as exc:
+        return None, str(exc)
 
-        return (
-            None,
-            f"Falha na consulta Earth Engine: {e}"
+
+# ==========================================================
+# LEGENDAS EXPLICATIVAS
+# ==========================================================
+
+def legenda_da_camada(camada):
+
+    if camada == CLASS_LAYER:
+
+        return {
+            "titulo": "Classificação ambiental — MLP-8 V2",
+            "tipo": "categorias",
+            "itens": list(COLORS.items()),
+            "descricao": (
+                "As cores representam classes atribuídas "
+                "pela inteligência artificial. "
+                "Áreas transparentes não possuem classificação. "
+                "Resultado exploratório, sem validação "
+                "manual independente concluída."
+            )
+        }
+
+    if camada == "Satélite RGB":
+
+        return {
+            "titulo": "Sentinel-2 — Cores naturais",
+            "tipo": "categorias",
+            "itens": [
+                ("B4 — Vermelho", "#e86c62"),
+                ("B3 — Verde", "#49ac75"),
+                ("B2 — Azul", "#5aa5e9")
+            ],
+            "descricao": (
+                "A imagem combina as bandas B4, B3 e B2 "
+                "para representar a superfície em cores "
+                "próximas das naturais. "
+                "Esta legenda identifica canais espectrais, "
+                "não classes ambientais."
+            )
+        }
+
+    descricoes = {
+        "NDVI": (
+            "Valores positivos elevados geralmente "
+            "indicam maior presença e vigor da vegetação. "
+            "Valores próximos de zero podem representar "
+            "solo exposto ou áreas construídas. "
+            "Valores negativos podem representar água "
+            "ou outras superfícies não vegetadas."
+        ),
+        "NDWI": (
+            "Valores positivos elevados podem indicar "
+            "água superficial. A interpretação depende "
+            "das características espectrais e ambientais. "
+            "O índice não substitui a validação dos "
+            "corpos hídricos."
+        ),
+        "NDBI": (
+            "Valores positivos elevados podem estar "
+            "associados a superfícies construídas. "
+            "Solo exposto também pode apresentar "
+            "valores elevados, exigindo cautela."
+        )
+    }
+
+    paleta_ndvi = [
+        "#9b4e24",
+        "#eee6be",
+        "#23865b"
+    ]
+
+    paleta_outros = [
+        "#a97e53",
+        "#f1eac3",
+        "#287dc0"
+    ]
+
+    return {
+        "titulo": f"{camada} — Índice espectral",
+        "tipo": "continuo",
+        "itens": (
+            paleta_ndvi
+            if camada == "NDVI"
+            else paleta_outros
+        ),
+        "descricao": descricoes.get(
+            camada, "Índice espectral contínuo."
+        )
+    }
+
+
+def painel_legenda(camada):
+
+    legenda = legenda_da_camada(camada)
+
+    titulo = html.escape(legenda["titulo"])
+    descricao = html.escape(legenda["descricao"])
+
+    if legenda["tipo"] == "continuo":
+
+        gradiente = ", ".join(
+            legenda["itens"]
         )
 
+        corpo = (
+            '<div style="height:22px;'
+            'border-radius:6px;'
+            f'background:linear-gradient(to right,{gradiente});'
+            'border:1px solid #bcc8d3;"></div>'
+            '<div style="display:flex;'
+            'justify-content:space-between;'
+            'font-size:13px;color:#17324d;'
+            'margin-top:5px;">'
+            '<span><b>−1</b> — baixo</span>'
+            '<span><b>0</b> — intermediário</span>'
+            '<span><b>+1</b> — alto</span>'
+            '</div>'
+        )
 
-# ============================================================
+    else:
+
+        corpo = (
+            '<div style="display:flex;'
+            'flex-wrap:wrap;gap:8px 20px;">'
+        )
+
+        for nome, cor in legenda["itens"]:
+
+            corpo += (
+                '<span style="display:inline-flex;'
+                'align-items:center;gap:7px;'
+                'font-size:14px;color:#17324d;">'
+                '<span style="display:inline-block;'
+                'width:18px;height:18px;'
+                f'background:{cor};'
+                'border:1px solid #8295a6;'
+                'border-radius:3px;"></span>'
+                f'{html.escape(nome)}</span>'
+            )
+
+        corpo += '</div>'
+
+    return (
+        '<div style="background:#f6faff;'
+        'border:1px solid #c9dced;'
+        'border-radius:12px;'
+        'padding:15px 18px;'
+        'color:#17324d;'
+        'font-family:Arial,sans-serif;'
+        'line-height:1.55;">'
+        f'<div style="font-weight:700;'
+        f'font-size:17px;'
+        f'margin-bottom:9px;">{titulo}</div>'
+        f'{corpo}'
+        '<p style="margin:10px 0 0;'
+        'font-size:14px;">'
+        f'{descricao}</p>'
+        '</div>'
+    )
+
+
+# ==========================================================
 # MENU LATERAL
-# ============================================================
+# ==========================================================
 
 with st.sidebar:
 
@@ -470,13 +594,13 @@ with st.sidebar:
     )
 
     st.caption(
-        "Sentinel-2 SR Harmonized • "
-        "01/01 a 16/06/2026 • 20 m"
+        "Sentinel-2 SR Harmonized "
+        "• Janeiro a junho de 2026 • 20 m"
     )
 
     st.warning(
-        "Resultados com pseudo-rótulos não "
-        "substituem validação de campo.",
+        "Resultados com pseudo-rótulos "
+        "não substituem validação de campo.",
         icon="⚠️"
     )
 
@@ -485,19 +609,18 @@ st.title("Monitoramento ambiental com IA")
 
 st.caption(
     "ERIMMT 2026 | Interface web baseada "
-    "no notebook de pesquisa • "
-    "versão demonstrativa funcional"
+    "no notebook de pesquisa"
 )
 
 
-# ============================================================
+# ==========================================================
 # PÁGINA 1 — VISÃO GERAL
-# ============================================================
+# ==========================================================
 
 if secao == "Visão geral":
 
     st.subheader(
-        "Resultados exploratórios — versão V2"
+        "Resultados exploratórios — Versão V2"
     )
 
     met = base_metrics()
@@ -532,16 +655,15 @@ if secao == "Visão geral":
         '<div class="note">'
         '<b>Interpretação:</b> as métricas V2 '
         'medem concordância com pseudo-rótulos '
-        'em teste espacial; não demonstram '
-        '95% de acurácia em verdade-terreno. '
-        'A referência manual independente '
-        'foi preparada, mas ainda não está '
-        'avaliada neste notebook.'
+        'em teste espacial. Não representam '
+        'validação independente em campo.'
         '</div>',
         unsafe_allow_html=True
     )
 
-    st.markdown("### Comparação de arquiteturas")
+    st.markdown(
+        "### Comparação de arquiteturas"
+    )
 
     st.dataframe(
         met,
@@ -611,9 +733,7 @@ if secao == "Visão geral":
     b.info(
         "Na revisão V2, aproximadamente "
         "3.938 pixels foram redirecionados "
-        "de área construída para solo exposto. "
-        "Isso é uma correção de pseudo-rótulos, "
-        "não uma mudança ambiental temporal."
+        "de área construída para solo exposto."
     )
 
     b.dataframe(
@@ -623,7 +743,7 @@ if secao == "Visão geral":
     )
 
     st.markdown(
-        "### Comparação externa — Dynamic World (V1)"
+        "### Comparação externa — Dynamic World V1"
     )
 
     st.write(
@@ -631,14 +751,13 @@ if secao == "Visão geral":
         "de MLP-8 com Dynamic World foi "
         "**49,07% de acurácia** e "
         "**0,5056 de F1 macro**. "
-        "Dynamic World é uma referência remota, "
-        "não uma verdade-terreno independente."
+        "Dynamic World não é verdade-terreno."
     )
 
 
-# ============================================================
+# ==========================================================
 # PÁGINA 2 — MAPA E ÍNDICES
-# ============================================================
+# ==========================================================
 
 elif secao == "Mapa e índices":
 
@@ -663,21 +782,15 @@ elif secao == "Mapa e índices":
 
         live = st.toggle(
             "Consultar Google Earth Engine",
-            value=True,
-            help=(
-                "Ative para carregar o raster "
-                "real do Google Earth Engine."
-            )
+            value=True
         )
 
         if is_class:
 
             st.info(
-                "**Mapa fixo MLP-8 V2:** "
-                "a seleção de datas e nuvens "
-                "não recalcula a classificação. "
-                "Este raster foi produzido no "
-                "Colab para o período de estudo de 2026."
+                "Este mapa MLP-8 V2 é fixo. "
+                "Alterar datas não recalcula "
+                "a classificação."
             )
 
             start = date(2026, 1, 1)
@@ -727,8 +840,8 @@ elif secao == "Mapa e índices":
                 }.issubset(df.columns):
 
                     st.error(
-                        "O arquivo precisa ter "
-                        "latitude e longitude."
+                        "O CSV precisa de latitude "
+                        "e longitude."
                     )
 
                     df = None
@@ -743,7 +856,7 @@ elif secao == "Mapa e índices":
                     )
 
                     st.caption(
-                        f"{len(df)} coordenadas carregadas"
+                        f"{len(df)} pontos carregados"
                     )
 
             except Exception as exc:
@@ -752,9 +865,7 @@ elif secao == "Mapa e índices":
                     f"CSV inválido: {exc}"
                 )
 
-    # --------------------------------------------------------
-    # MAPA OPENSTREETMAP
-    # --------------------------------------------------------
+    # CONSTRUÇÃO DO MAPA
 
     m = folium.Map(
         location=CENTER,
@@ -768,12 +879,8 @@ elif secao == "Mapa e índices":
         radius=10000,
         color="#19a999",
         fill=False,
-        tooltip="Área de estudo: raio de 10 km"
+        tooltip="Área de estudo — 10 km"
     ).add_to(m)
-
-    # --------------------------------------------------------
-    # CONSULTA AO EARTH ENGINE
-    # --------------------------------------------------------
 
     if live:
 
@@ -787,7 +894,7 @@ elif secao == "Mapa e índices":
         else:
 
             with st.spinner(
-                "Consultando imagens no Earth Engine..."
+                "Consultando Google Earth Engine..."
             ):
 
                 tile, msg = ee_tile(
@@ -801,7 +908,9 @@ elif secao == "Mapa e índices":
 
                 folium.TileLayer(
                     tiles=tile,
-                    attr="Google Earth Engine / Copernicus",
+                    attr=(
+                        "Google Earth Engine / Copernicus"
+                    ),
                     name=mode,
                     overlay=True,
                     control=True,
@@ -813,27 +922,19 @@ elif secao == "Mapa e índices":
             else:
 
                 st.error(
-                    "Camada remota indisponível. " + msg
+                    "Camada indisponível: " + msg
                 )
-
-    # --------------------------------------------------------
-    # PONTOS ENVIADOS POR CSV
-    # --------------------------------------------------------
 
     if df is not None:
 
-        marker_group = MarkerCluster(
+        grupo = MarkerCluster(
             name="Pontos enviados"
         )
 
         for _, r in df.head(2000).iterrows():
 
-            title = html.escape(
-                str(
-                    r.get(
-                        "id_ponto", "Ponto"
-                    )
-                )
+            titulo = html.escape(
+                str(r.get("id_ponto", "Ponto"))
             )
 
             folium.Marker(
@@ -841,11 +942,11 @@ elif secao == "Mapa e índices":
                     float(r.latitude),
                     float(r.longitude)
                 ],
-                tooltip=title,
-                popup=title
-            ).add_to(marker_group)
+                tooltip=titulo,
+                popup=titulo
+            ).add_to(grupo)
 
-        marker_group.add_to(m)
+        grupo.add_to(m)
 
     folium.LayerControl().add_to(m)
 
@@ -858,102 +959,66 @@ elif secao == "Mapa e índices":
             returned_objects=[]
         )
 
-    # --------------------------------------------------------
-    # LEGENDA E ESTATÍSTICAS DA CLASSIFICAÇÃO
-    # --------------------------------------------------------
+    # LEGENDA AUTOMÁTICA PARA TODAS AS CAMADAS
+
+    st.markdown(
+        "### Legenda e interpretação do mapa"
+    )
+
+    st.markdown(
+        painel_legenda(mode),
+        unsafe_allow_html=True
+    )
+
+    st.caption(
+        "O contorno turquesa delimita a área "
+        "de estudo de 10 km de raio. "
+        "A opacidade pode alterar a aparência "
+        "das cores pela mistura com o mapa-base."
+    )
 
     if is_class:
 
-        st.markdown(
-            "#### Legenda da classificação MLP-8 V2"
-        )
-
-        legend = " ".join(
-            f'<span style="display:inline-block;'
-            f'margin:0 16px 8px 0;">'
-            f'<span style="display:inline-block;'
-            f'width:14px;height:14px;'
-            f'vertical-align:middle;'
-            f'border-radius:3px;'
-            f'background:{color};'
-            f'margin-right:6px;"></span>'
-            f'{html.escape(name)}</span>'
-            for name, color in COLORS.items()
-        )
-
-        st.markdown(
-            legend,
-            unsafe_allow_html=True
-        )
-
-        st.markdown(
-            "#### Áreas estimadas por classe — MLP-8 V2"
+        st.subheader(
+            "Distribuição espacial — MLP-8 V2"
         )
 
         st.dataframe(
-            CLASS_STATS[
-                [
-                    "Classe",
-                    "Pixels",
-                    "Área (ha)",
-                    "Percentual"
-                ]
-            ],
+            CLASS_STATS,
             hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Pixels": (
-                    st.column_config.NumberColumn(
-                        format="%d"
-                    )
-                ),
-                "Área (ha)": (
-                    st.column_config.NumberColumn(
-                        format="%.2f"
-                    )
-                ),
-                "Percentual": (
-                    st.column_config.NumberColumn(
-                        "Percentual (%)",
-                        format="%.2f%%"
-                    )
-                )
-            }
+            use_container_width=True
         )
 
         st.download_button(
-            "Baixar tabela das classes (CSV)",
+            "Baixar dados da classificação (CSV)",
             records_to_csv(CLASS_STATS),
             "erimmt_areas_mlp8_v2.csv",
             mime="text/csv"
         )
 
         st.caption(
-            "Cobertura válida: 774.600 de 785.395 "
-            "pixels no círculo (98,63%). "
-            "Aproximadamente 1,37% permanecem "
-            "sem dados. Os hectares e percentuais "
-            "são estimativas da classificação "
-            "automática, não medições validadas "
-            "em campo. Resultados exploratórios "
-            "com pseudo-rótulos; validação "
-            "manual independente pendente."
+            "Cobertura válida: 774.600 pixels "
+            "de 785.395 no círculo (98,63%). "
+            "Os percentuais são calculados "
+            "somente sobre pixels classificados. "
+            "A validação manual independente "
+            "ainda está pendente."
         )
 
     else:
 
         st.caption(
-            "As camadas RGB e índices são "
-            "calculadas conforme o intervalo "
-            "e o filtro de nuvens. "
-            "A classificação MLP-8 V2 é um "
-            "raster previamente processado."
+            "Os índices NDVI, NDWI e NDBI "
+            "apresentam valores espectrais "
+            "contínuos. Não devem ser "
+            "interpretados como classificações "
+            "automáticas de uso e cobertura do solo."
         )
 
 
-# ============================================================
+# ==========================================================
 # PÁGINA 3 — AUDITORIA MANUAL
-# ============================================================
+# ==========================================================
 
 elif secao == "Auditoria manual":
 
@@ -962,15 +1027,12 @@ elif secao == "Auditoria manual":
     )
 
     st.write(
-        "Importe o arquivo "
-        "`referencia_manual_para_anotacao.csv` "
-        "criado no Colab. "
-        "O aplicativo não revela os "
-        "pseudo-rótulos ao anotador."
+        "Importe o CSV de referência manual "
+        "produzido no Colab."
     )
 
     upload = st.file_uploader(
-        "CSV de anotação",
+        "Arquivo CSV de anotação",
         type="csv",
         key="audit"
     )
@@ -986,15 +1048,12 @@ elif secao == "Auditoria manual":
                 ).fillna("")
             )
 
-            required = {
+            if not {
                 "latitude", "longitude"
-            }
-
-            if not required.issubset(df):
+            }.issubset(df.columns):
 
                 st.error(
-                    "Faltam as colunas "
-                    "latitude e longitude."
+                    "Faltam latitude e longitude."
                 )
 
             else:
@@ -1012,15 +1071,15 @@ elif secao == "Auditoria manual":
                         ]
                     )
 
-                for c in [
+                for coluna in [
                     "classe_manual",
                     "confianca",
                     "data_imagem",
                     "observacoes"
                 ]:
 
-                    if c not in df:
-                        df[c] = ""
+                    if coluna not in df:
+                        df[coluna] = ""
 
                 if (
                     "audit_table" not in st.session_state
@@ -1055,10 +1114,8 @@ elif secao == "Auditoria manual":
                             st.column_config.SelectboxColumn(
                                 "Confiança",
                                 options=[
-                                    "",
-                                    "Alta",
-                                    "Média",
-                                    "Baixa"
+                                    "", "Alta",
+                                    "Média", "Baixa"
                                 ]
                             ),
                         "observacoes":
@@ -1091,14 +1148,13 @@ elif secao == "Auditoria manual":
                     "Baixar anotações em CSV",
                     records_to_csv(edit),
                     "referencia_manual_anotada.csv",
-                    "text/csv",
-                    type="primary"
+                    "text/csv"
                 )
 
                 st.info(
-                    "Salve o CSV periodicamente. "
-                    "As edições não são gravadas "
-                    "automaticamente no Google Drive."
+                    "Salve periodicamente o CSV. "
+                    "As alterações não são "
+                    "gravadas automaticamente."
                 )
 
         except Exception as exc:
@@ -1111,16 +1167,15 @@ elif secao == "Auditoria manual":
 
         st.info(
             "O notebook informa que 200 pontos "
-            "foram preparados (50 por estrato). "
-            "O CSV real deve ser importado: "
-            "seus dados não estão embutidos "
-            "no arquivo .ipynb."
+            "foram preparados para anotação. "
+            "Importe o CSV para visualizar "
+            "e preencher os dados."
         )
 
 
-# ============================================================
+# ==========================================================
 # PÁGINA 4 — MODELOS E PREVISÕES
-# ============================================================
+# ==========================================================
 
 elif secao == "Modelos e previsões":
 
@@ -1129,10 +1184,9 @@ elif secao == "Modelos e previsões":
     )
 
     st.write(
-        "Para classificar dados novos, envie "
-        "um CSV com bandas espectrais e os "
-        "dois arquivos exportados pelo Colab "
-        "(`.keras` e `_scaler.joblib`)."
+        "Envie o CSV de bandas espectrais "
+        "e os arquivos `.keras` e `.joblib` "
+        "exportados pelo Colab."
     )
 
     model = st.selectbox(
@@ -1159,10 +1213,9 @@ elif secao == "Modelos e previsões":
     )
 
     st.caption(
-        "Importe apenas modelos e scalers "
-        "produzidos por você ou por fonte "
-        "confiável. Arquivos joblib podem "
-        "executar código ao serem carregados."
+        "Carregue apenas modelos e scalers "
+        "de origem confiável. Arquivos joblib "
+        "podem executar código."
     )
 
     if st.button(
@@ -1171,22 +1224,19 @@ elif secao == "Modelos e previsões":
     ):
 
         if not all([
-            csv,
-            keras_file,
-            scaler_file
+            csv, keras_file, scaler_file
         ]):
 
             st.error(
-                "Envie os três arquivos para "
-                "executar inferência real."
+                "Envie os três arquivos."
             )
 
         else:
 
             try:
 
-                import tempfile
                 import os
+                import tempfile
                 import joblib
 
                 from tensorflow.keras.models import (
@@ -1247,14 +1297,11 @@ elif secao == "Modelos e previsões":
                             errors="coerce"
                         )
 
-                        valid = x.notna().all(
-                            axis=1
-                        )
+                        valid = x.notna().all(axis=1)
 
                         out = data.copy()
 
                         out["classe_prevista"] = ""
-
                         out["confianca_modelo"] = np.nan
 
                         if valid.any():
@@ -1283,7 +1330,7 @@ elif secao == "Modelos e previsões":
 
                         st.success(
                             f"{valid.sum()} "
-                            "linhas classificadas"
+                            "linhas classificadas."
                         )
 
                         st.dataframe(
@@ -1301,8 +1348,8 @@ elif secao == "Modelos e previsões":
             except ImportError:
 
                 st.error(
-                    "TensorFlow não está instalado. "
-                    "Veja README para habilitar inferência."
+                    "TensorFlow não está instalado "
+                    "no servidor."
                 )
 
             except Exception as exc:
@@ -1311,78 +1358,80 @@ elif secao == "Modelos e previsões":
                     f"Falha de inferência: {exc}"
                 )
 
-    st.markdown(
-        "**Importante:** a confiança softmax "
-        "não é uma probabilidade calibrada "
-        "de acerto. Esse fluxo classifica "
-        "linhas de CSV, não imagens "
-        "inteiras de satélite."
+    st.caption(
+        "A confiança softmax não é uma "
+        "probabilidade calibrada de acerto. "
+        "Esta ferramenta classifica linhas "
+        "de CSV, não imagens inteiras."
     )
 
 
-# ============================================================
+# ==========================================================
 # PÁGINA 5 — DADOS E METODOLOGIA
-# ============================================================
+# ==========================================================
 
 else:
 
     st.subheader(
-        "Método e transparência"
+        "Dados e metodologia científica"
     )
 
     st.markdown("""
-**Fonte:** notebook `Untitled15.ipynb`, fornecido
-pela autora via Google Colab.
+**Projeto:** ERIMMT 2026 — Monitoramento ambiental
+na Baixada Cuiabana com sensoriamento remoto
+e inteligência artificial.
 
-**Recorte:** centro em Várzea Grande
-(−15,6461; −56,1326), raio 10 km,
-imagens Sentinel-2 SR Harmonized de
-01/01/2026 a 16/06/2026, nuvens abaixo
-de 10%, bandas B2, B3, B4, B8 e B11,
-referência de 20 m.
+**Região:** área de estudo centrada em
+Várzea Grande, Mato Grosso, com raio de 10 km.
 
-**Índices espectrais:**
+**Fonte de imagens:** Sentinel-2 SR Harmonized.
 
-- NDVI: (B8 − B4) / (B8 + B4)
-- NDWI: (B3 − B8) / (B3 + B8)
-- NDBI: (B11 − B8) / (B11 + B8)
+**Período de referência:** janeiro a junho de 2026.
 
-**Classes ambientais:**
+**Resolução espacial:** 20 metros.
 
-- Área construída
-- Vegetação
-- Água
-- Solo exposto
+**Índices ambientais:**
 
-**Aprendizado:** pseudo-rotulagem espectral,
-amostragem estratificada, divisão espacial
-treino/teste por blocos, modelos MLP-5 e
-MLP-8, comparação com Dynamic World,
-auditoria de divergências e revisão dos
-pseudo-rótulos V2.
+- NDVI = (B8 − B4) / (B8 + B4)
+- NDWI = (B3 − B8) / (B3 + B8)
+- NDBI = (B11 − B8) / (B11 + B8)
 
-**Mapa MLP-8 V2:** asset
-`projects/erimmt/assets/classificacao_MLP8_V2_2026`,
-resolução de 20 m, área circular de
-raio 10 km, 774.600 pixels classificados
-e cobertura válida de 98,63%.
+**Modelo de IA:** rede neural MLP-8 V2,
+com oito variáveis espectrais e quatro
+classes ambientais.
 
-O raster é fixo e não é recalculado
-pelos filtros de data.
+**Asset da classificação:**
 
-**Limitação central:** treino e teste
-com pseudo-rótulos podem compartilhar
-o viés de geração desses rótulos.
+`projects/erimmt/assets/classificacao_MLP8_V2_2026`
 
-A avaliação manual independente é uma
-etapa distinta e permanece pendente.
+**Resultados espaciais:**
+
+- Pixels classificados: 774.600
+- Cobertura válida: 98,63%
+- Área classificada: 30.984 hectares
+- Classes: área construída, vegetação,
+  água e solo exposto
+
+**Limitações metodológicas:**
+
+Os resultados da MLP-8 V2 são exploratórios,
+pois as métricas de treinamento e teste
+foram obtidas com pseudo-rótulos.
+
+A validação manual independente ainda
+não foi concluída.
+
+Os mapas dos índices espectrais são
+representações contínuas e não equivalem
+a classificações supervisionadas.
+
+O raster de classificação é fixo e não
+é atualizado automaticamente quando
+o usuário modifica as datas.
 """)
 
-    st.markdown(
-        "**Arquivos do projeto:** notebook "
-        "original incluído para rastreabilidade; "
-        "dados CSV, modelos `.keras`, "
-        "scalers `.joblib` e camadas exportadas "
-        "devem ser transferidos separadamente "
-        "do Google Drive."
+    st.info(
+        "Para a apresentação científica, "
+        "diferencie os resultados exploratórios "
+        "da validação independente."
     )
