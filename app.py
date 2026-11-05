@@ -19,8 +19,32 @@ CENTER = [-15.6461,-56.1326]
 st.markdown("""<style>
 .block-container {padding-top:1.35rem;max-width:1500px}
 h1,h2,h3 {letter-spacing:-.025em}
-[data-testid="stMetric"] {background:#14283b;border:1px solid #264159;border-radius:13px;padding:14px}
-.note{border-left:4px solid #e7c46a;background:#26303b;padding:13px 18px;border-radius:5px}
+
+[data-testid="stMetric"] {
+    background: #f0f7ff;
+    border: 1px solid #c9dced;
+    border-radius: 13px;
+    padding: 14px;
+}
+
+[data-testid="stMetric"] label,
+[data-testid="stMetric"] [data-testid="stMetricLabel"],
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    color: #17324d !important;
+}
+
+.note {
+    border-left: 4px solid #d39b27;
+    background: #fff7e6;
+    color: #263648 !important;
+    padding: 13px 18px;
+    border-radius: 5px;
+}
+
+.note * {
+    color: #263648 !important;
+}
+
 </style>""", unsafe_allow_html=True)
 
 def records_to_csv(df):
