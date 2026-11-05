@@ -153,7 +153,7 @@ elif secao=="Mapa e índices":
                     df=df.dropna(subset=["latitude","longitude"])
                     st.caption(f"{len(df)} coordenadas carregadas")
             except Exception as exc:st.error(f"CSV inválido: {exc}")
-    m=folium.Map(location=CENTER,zoom_start=11,tiles="CartoDB positron",control_scale=True)
+    m=folium.Map(location=CENTER,zoom_start=11,tiles="OpenStreetMap",control_scale=True)
     folium.Circle(location=CENTER,radius=10000,color="#19a999",fill=False,tooltip="Área de estudo: 10 km").add_to(m)
     if live:
         if end<=start:st.error("A data final precisa ser posterior à inicial.")
