@@ -1682,11 +1682,42 @@ elif pagina == "Modelos e resultados":
         use_container_width=True
     )
 
-    st.bar_chart(
-        medidas.set_index("Modelo")[
-            ["Concordância interna (%)"]
-        ]
+
+    # Gráfico comparativo MLP-5 V2 x MLP-8 V2
+    fig = px.bar(
+        medidas,
+        x="Concordância interna (%)",
+        y="Modelo",
+        orientation="h",
+        text="Concordância interna (%)",
+        color="Modelo",
+        color_discrete_map={
+            "MLP-5 V2": "#2477BD",
+            "MLP-8 V2": "#18A57B"
+        }
     )
+
+    fig.update_traces(
+        texttemplate="%{x:.2f}%",
+        textposition="outside",
+        cliponaxis=False
+    )
+
+    fig.update_layout(
+        title="Comparação dos modelos MLP",
+        xaxis_title="Concordância interna (%)",
+        yaxis_title="",
+        xaxis_range=[0, 105],
+        height=300,
+        showlegend=False,
+        margin=dict(l=10, r=70, t=55, b=30)
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
 
     st.warning(
         "As métricas medem concordância "
